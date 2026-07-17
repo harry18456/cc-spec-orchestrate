@@ -5,13 +5,13 @@ English | [繁體中文](README.zh-TW.md)
 Run spec-driven development **entirely inside Claude Code** — Claude acts as both the **global commander** and the **executor**.
 You give instructions in natural language; the skill orchestrates the rest: detect the spec tool → propose (discuss and settle with you) → hybrid execution (small changes done directly on the main thread, big ones delegated to an executor subagent) → per-stage review → archive → commit.
 
-Currently ships one skill: **`spec-claude-orchestrate`** — the **Claude-only counterpart** of `spec-codex-orchestrate` (a Codex-delegating variant, not included in this plugin): same process philosophy, no Codex subscription required.
+Currently ships one skill: **`spec-claude-orchestrate`**.
 
 ## Prerequisites
 
 1. The project has a **spectra** or **openspec** environment initialized.
 2. Open Claude Code at the **spec project root** (the spectra CLI resolves the cwd).
-3. **No** codex plugin required — that is exactly why this skill exists.
+3. Nothing else — **zero dependencies**: no external CLI, no network; it all runs inside Claude Code.
 
 ## Installation
 
@@ -37,11 +37,10 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 ## How to trigger
 
 - **Automatic**: in a repo with spectra/openspec, just state the intent, e.g.
-  - "Without codex, build a CSV-export feature through the spec pipeline yourself — propose first so I can review"
+  - "Build a CSV-export feature through the spec pipeline — propose first so I can review"
   - "Continue the previous change; verify it yourself when done and move on if it's fine"
 - **Manual**: say "run this with spec-claude-orchestrate", or type `/spec-orchestrate:spec-claude-orchestrate`.
 
-> Versus the codex variant: codex plugin available and you want to delegate → `spec-codex-orchestrate`; unsubscribed / unavailable / you want Claude to own it all → this skill.
 > It won't misfire on: general code review, wording polish, running tests, typo fixes, config troubleshooting — anything that doesn't touch a spec.
 
 ## How it works: two nested loops
@@ -82,7 +81,7 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 ## Example walkthrough (one change end-to-end)
 
 ```
-You:    Use the spec pipeline for "export search results as CSV"; discuss it with me first, then do it all yourself
+You:    Use the spec pipeline for "export search results as CSV"; discuss it with me first
 Claude: [detects spectra mode] A few things to confirm: export the current page or everything? Which columns? …
 You:    (discussion…) everything, include the header row
 Claude: [produces proposal/specs/tasks] Here's the plan — OK?
@@ -102,13 +101,12 @@ Claude: Done — here's the final commit (for you to sign off)
 - **Across sessions**: executor subagents die with the session; **durable state lives in the spec artifacts** (tick tasks.md as you go, `spectra park`/`in-progress` markers). A new session continuing a change spawns a fresh executor grounded on the artifacts.
 - **One change, one executor**: all follow-up instructions for the same change go to the same executor via SendMessage; don't spawn another.
 - **Hard condition for archive**: green tests / a finished TDD run **doesn't count as verification** — before archiving, Claude reruns the key scenarios for real evidence (CLI actually executed, API endpoints actually hit, UI e2e). Changes that can't be run for real get an explicit statement of how they were verified instead.
-- Pitfalls the codex variant has that this one doesn't: file edits don't depend on cwd alignment (Claude tools use absolute paths; spectra CLI commands still run at the project root), and there is no "resume-last continued the wrong thread" problem (SendMessage targets a named executor, so parallel changes don't get mixed up).
+- **The spectra CLI resolves the cwd**: `spectra` has no flag to point at a directory, so every `spectra` command must run at the spec project root (Claude's file-editing tools use absolute paths and aren't affected).
 
 ## This plugin's components
 
-Currently uses **skills** only (`skills/spec-claude-orchestrate/`, auto-discovered by Claude Code — no plugin.json declaration needed). `commands/`, `agents/`, `hooks/`, `output-styles/`, `bin/` are reserved skeletons; future extensions (e.g. adding the codex-delegating variant) just drop files in.
+Currently uses **skills** only (`skills/spec-claude-orchestrate/`, auto-discovered by Claude Code — no plugin.json declaration needed). `commands/`, `agents/`, `hooks/`, `output-styles/`, `bin/` are reserved skeletons; future extensions just drop files in.
 
 ## Related files
 
 - **Skill body**: [`skills/spec-claude-orchestrate/SKILL.md`](skills/spec-claude-orchestrate/SKILL.md)
-- **Codex-delegating variant**: `spec-codex-orchestrate` — a separate skill, not shipped in this plugin (requires the codex plugin and a subscription)

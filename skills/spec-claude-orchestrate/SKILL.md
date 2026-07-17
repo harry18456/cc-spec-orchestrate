@@ -4,20 +4,18 @@ description: >-
   Run spec-driven development entirely inside Claude Code — Claude is both the global commander
   (propose, every review gate, archive, commit) and the executor (small changes on the main
   thread; big multi-phase changes via ONE executor subagent per change, continued with
-  SendMessage). No Codex required. Use this WHENEVER taking a feature through the spec pipeline
-  or continuing one mid-flight in a repo with spectra or openspec, and the codex plugin is
-  unavailable or unsubscribed — or the user wants Claude to handle it all. Typical asks: 不用
-  codex 走 spec 流程做某個功能、你全權處理這個 change、用 spectra/openspec 開一個 change 先
-  propose 我確認後你自己實作、一個階段一個階段做完你自己驗、繼續上一個 change、archive 並
-  commit。If the codex plugin IS available and the user prefers delegating, use
-  spec-codex-orchestrate instead. Do NOT use for one-off questions, plain edits, CLI/config
-  troubleshooting, 一般 code review、潤飾文字、跑測試, or anything that doesn't touch a spec.
-compatibility: Requires a spec tool (spectra CLI or openspec) initialized in the repo. No Codex needed.
+  SendMessage). Use this WHENEVER taking a feature through the spec pipeline or continuing one
+  mid-flight in a repo with spectra or openspec, and the user wants Claude to handle it all.
+  Typical asks: 走 spec 流程做某個功能、你全權處理這個 change、用 spectra/openspec 開一個 change
+  先 propose 我確認後你自己實作、一個階段一個階段做完你自己驗、繼續上一個 change、archive 並
+  commit。Do NOT use for one-off questions, plain edits, CLI/config troubleshooting, 一般 code
+  review、潤飾文字、跑測試, or anything that doesn't touch a spec.
+compatibility: Requires a spec tool (spectra CLI or openspec) initialized in the repo.
 ---
 
 # Spec-Claude Orchestrate
 
-把 spec-driven 開發完整跑在 **Claude Code 單引擎**內：你（Claude 主線）當**全局指揮**，持有 change 的全局狀態與**所有決策權**；實作依規模走**主線直做**或**executor subagent**（混合制）。這是 `spec-codex-orchestrate` 的 Claude-only 對應版——流程哲學相同，執行者從 Codex 換成 Claude 自己。
+把 spec-driven 開發完整跑在 **Claude Code 單引擎**內：你（Claude 主線）當**全局指揮**，持有 change 的全局狀態與**所有決策權**；實作依規模走**主線直做**或**executor subagent**（混合制）。
 
 ## 核心原則
 
@@ -113,8 +111,3 @@ executor 自覺處理有問題上報時 → 主線做判斷 → 給新指示 Sen
 ## 步驟 7 — commit（主線親自）
 
 由主線做最後的 change commit（全局收尾，commit message 用 en-us、conventional commits）。
-
-## 與 spec-codex-orchestrate 的關係
-
-- codex plugin **可用且使用者想委派** → 用 `spec-codex-orchestrate`；**codex 不可用／未訂閱／使用者要 Claude 全權處理** → 用本 skill。
-- 兩者共用 spec artifacts 格式；因為耐久狀態都在 artifacts 裡，同一個 change 中途從 codex 版切到本 skill（或反向）是可行的，但建議一個 change 用一套跑完。

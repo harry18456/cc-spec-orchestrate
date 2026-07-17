@@ -2,7 +2,7 @@
   "name": "spec-orchestrate",
   "displayName": "Spec Orchestrate",
   "version": "0.1.0",
-  "description": "Run spec-driven development entirely inside Claude Code — Claude is both the global commander (propose with user sign-off, per-stage review gates, archive, commit) and the executor (small changes on the main thread; multi-phase changes via one executor subagent per change, continued with SendMessage). Auto-detects spectra or openspec; no Codex required.",
+  "description": "Run spec-driven development entirely inside Claude Code — Claude is both the global commander (propose with user sign-off, per-stage review gates, archive, commit) and the executor (small changes on the main thread; multi-phase changes via one executor subagent per change, continued with SendMessage). Auto-detects spectra or openspec.",
   "author": {
     "name": "Harry",
     "url": "https://github.com/harry18456"
