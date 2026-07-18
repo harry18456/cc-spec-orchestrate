@@ -37,9 +37,10 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 ## 怎麼觸發
 
 - **自動**:在有 spectra/openspec 的專案,講出意圖即可,例如
-  - 「用 spec 流程做一個匯出 CSV 的功能,先 propose 我看過」
-  - 「繼續上一個 change,做完你自己驗,沒問題就往下」
+  - 「用 spec 流程做一個匯出 CSV 的功能,一路做到 commit」
+  - 「繼續上一個 change,自己驗完就 archive」
 - **手動**:直接說「用 spec-claude-orchestrate 跑這個」,或輸入 `/spec-orchestrate:spec-claude-orchestrate`。
+- **想中途把關**:明講「只做 proposal 先給我看」或「先別 commit」,Claude 就會停在該點——**預設是全程自治、不會停下等你核准**。
 
 > 不會誤觸發的情況:一般 code review、潤飾文字、跑測試、改 typo、config 排錯等「不碰 spec」的事。
 
@@ -58,15 +59,19 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 └──────────────────────────────────────────────────────┘
 ```
 
-**內層自動跑,你不必一階一階盯。**
+**內層自動跑,你不必一階一階盯。外層預設也自治**——propose→apply→review→archive→commit 一路自己跑,不會停下等你核准,只在下面這些點回來找你。
 
-## 你的角色:propose 討論定案 → 之後放手
+## 你的角色:預設全程自治,你只在關鍵點介入
 
-| 你介入的點 | 做什麼 |
-|-----------|--------|
-| **propose(主關卡)** | 跟 Claude 把「要做什麼」**討論清楚**,proposal/tasks 確認「可以」才往下 |
-| 重大決策 / 卡住 | Claude 判斷不了時,由你拍板 |
-| 最後 commit | change 收尾 |
+觸發 skill 就等於**預先授權**整條 pipeline;Claude 只在這些情況停下等你:
+
+| 停下的點 | 什麼時候 |
+|---------|---------|
+| 需求重大歧義 | 影響方向的歧義,從程式碼/artifacts 也 ground 不了時才問你;否則自行合理定案 |
+| 重大決策 / 卡住 | blocker 排不掉、或需要新權限/外部 credential/動到 scope 外資料 |
+| 你主動喊停 | 你明講「只做 proposal」「先別 commit」時停在該點 |
+
+其餘一律不等核准——proposal 摘要、每階段結果都只是**進度回報**,不是要你按「同意」。
 
 ## 混合制:誰動手實作?
 
@@ -78,18 +83,20 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 - 一個 change = 一隻 executor(Agent tool 起手、後續用 SendMessage 續同一隻)。
 - review gate 一律回主線判斷——**不因為是自己寫的就放水**(主線直做的 change 會先另開乾淨 context 的 subagent 審過再判斷)。
 
-## 使用範例(一個 change 從頭到尾)
+## 使用範例(一個 change 從頭到尾、全程自治)
 
 ```
-你:用 spec 流程做「搜尋結果匯出 CSV」,先跟我討論清楚再做
-Claude:[偵測 spectra 模式] 我想確認幾點:匯出範圍是當前頁還是全部?欄位要哪些?…
-你:(討論…)全部、含標題列
-Claude:[產出 proposal/specs/tasks] 這是計畫,OK 嗎?
-你:OK,開始做
-Claude:[tasks 有 3 階段 → 開 executor subagent 實作] → 回報 → [主線 review] → 通過
-        → SendMessage 續下一階段 →(中途卡住才回報你)→ … → archive
-Claude:實作完成,這是最後的 commit(給你看 / 你拍板)
+你:用 spec 流程做「搜尋結果匯出 CSV」,一路做到 commit
+Claude:[偵測 spectra 模式;需求無重大歧義 → 自行合理定案,假設寫進 proposal]
+        [產出 proposal/specs/tasks + validate/analyze] 這是計畫摘要,直接開始實作 ← 進度回報,不等你點頭
+        [tasks 有 3 階段 → 開 executor subagent 實作] → 回報
+        → [主線 review + 實跑專案走過關鍵路徑驗證] → 通過
+        → SendMessage 續下一階段 →(只有卡住/重大歧義才回報你)→ …
+        → 實跑走過關鍵路徑 → archive → selective commit
+Claude:完成,已 commit(hash + 實跑驗證證據);過程只在 X 處停下問你
 ```
+
+> 若需求有影響方向的重大歧義,Claude 會在 propose 前先問你一句(一次一個),談清楚再自行往下;之後不再逐階等你。
 
 ## spectra vs openspec(自動切換)
 
@@ -100,7 +107,7 @@ Claude:實作完成,這是最後的 commit(給你看 / 你拍板)
 
 - **跨 session**:executor subagent 隨 session 結束消失,**耐久狀態以 spec artifacts 為準**(tasks.md 即時勾、`spectra park`/`in-progress` 標記)。新 session 續 change 會開新 executor、靠 artifacts 接手。
 - **一個 change 一隻 executor**:同 change 的修改指示都用 SendMessage 續同一隻,不要另開。
-- **archive 硬條件**:測試綠燈/TDD 跑完**不算驗證**——archive 前 Claude 會實跑關鍵情境留下證據(CLI 實跑、API 打 endpoint、UI e2e);無法實跑的 change 會明講用什麼方式驗的。
+- **apply 實跑完成契約(硬條件)**:專案能在本機跑就**必須實際啟動走過關鍵路徑**才算 apply 完成(CLI 實跑、API 打 endpoint、UI e2e)——測試綠燈/TDD/lint/build 只是輔助證據,**能跑卻沒跑不得宣告完成、也不得 archive**;客觀無法跑(缺 credential/硬體/服務)則明講原因、替代驗證與沒驗到什麼。runtime 發現問題會交回同一隻 executor 修完重驗。
 - **spectra CLI 認 cwd**:`spectra` 沒有指定目錄的 flag,所有 `spectra` 命令都要在 spec 專案根執行(Claude 的檔案編輯工具走絕對路徑,不受此限)。
 
 ## 這個 plugin 的組件

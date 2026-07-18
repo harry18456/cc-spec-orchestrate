@@ -37,9 +37,10 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 ## How to trigger
 
 - **Automatic**: in a repo with spectra/openspec, just state the intent, e.g.
-  - "Build a CSV-export feature through the spec pipeline — propose first so I can review"
-  - "Continue the previous change; verify it yourself when done and move on if it's fine"
+  - "Build a CSV-export feature through the spec pipeline, all the way to commit"
+  - "Continue the previous change; verify it yourself and archive"
 - **Manual**: say "run this with spec-claude-orchestrate", or type `/spec-orchestrate:spec-claude-orchestrate`.
+- **Want a checkpoint**: say "just propose first, show me" or "don't commit yet" and Claude stops there — **the default is fully autonomous, it won't pause for your approval**.
 
 > It won't misfire on: general code review, wording polish, running tests, typo fixes, config troubleshooting — anything that doesn't touch a spec.
 
@@ -58,15 +59,19 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 └─────────────────────────────────────────────────────────────┘
 ```
 
-**The inner loop runs on its own — you don't have to babysit every stage.**
+**The inner loop runs on its own — you don't have to babysit every stage. The outer loop is autonomous too** — propose→apply→review→archive→commit runs end to end without pausing for approval; Claude only comes back at the points below.
 
-## Your role: settle the proposal, then let go
+## Your role: autonomous by default, you step in only at key points
 
-| When you step in | What you do |
-|------------------|-------------|
-| **propose (the main gate)** | Discuss with Claude until "what to build" is **clear**; apply starts only after you approve the proposal/tasks |
-| Major decisions / stuck | When Claude can't decide, you make the call |
-| Final commit | Close out the change |
+Triggering the skill **pre-authorizes** the whole pipeline; Claude stops for you only when:
+
+| Stop point | When |
+|------------|------|
+| Major requirement ambiguity | A direction-changing ambiguity it can't ground from code/artifacts — otherwise it settles on the most reasonable reading itself |
+| Major decision / stuck | A blocker it can't clear, or something needing new permissions / external credentials / out-of-scope data |
+| You call a halt | You said "just propose" or "don't commit yet" — it stops there |
+
+Everything else runs without approval — the proposal summary and each stage's result are **progress reports, not requests for your sign-off**.
 
 ## Hybrid execution: who writes the code?
 
@@ -78,18 +83,20 @@ New-Item -ItemType Junction -Path "$env:USERPROFILE\.claude\skills\spec-orchestr
 - One change = one executor (started with the Agent tool, follow-ups continue the same one via SendMessage).
 - Review gates always come back to the main thread — **no free pass just because it wrote the code itself** (main-thread-implemented changes get a clean-context subagent review first).
 
-## Example walkthrough (one change end-to-end)
+## Example walkthrough (one change end-to-end, fully autonomous)
 
 ```
-You:    Use the spec pipeline for "export search results as CSV"; discuss it with me first
-Claude: [detects spectra mode] A few things to confirm: export the current page or everything? Which columns? …
-You:    (discussion…) everything, include the header row
-Claude: [produces proposal/specs/tasks] Here's the plan — OK?
-You:    OK, go
-Claude: [tasks have 3 stages → spawns an executor subagent] → report → [main-thread review] → pass
-        → SendMessage for the next stage → (only comes back if stuck) → … → archive
-Claude: Done — here's the final commit (for you to sign off)
+You:    Use the spec pipeline for "export search results as CSV", all the way to commit
+Claude: [detects spectra mode; no major ambiguity → settles it itself, assumptions written into the proposal]
+        [produces proposal/specs/tasks + validate/analyze] Here's the plan summary, starting apply now ← a report, not a prompt to approve
+        [tasks have 3 stages → spawns an executor subagent] → report
+        → [main-thread review + actually runs the project through the key path] → pass
+        → SendMessage for the next stage → (only comes back if stuck / major ambiguity) → …
+        → runs the key path for real → archive → selective commit
+Claude: Done — committed (hash + runtime-verification evidence); stopped to ask you at X points only
 ```
+
+> If a requirement has a direction-changing ambiguity, Claude asks you once before proposing (one question at a time), settles it, then proceeds on its own — no per-stage approval after that.
 
 ## spectra vs openspec (auto-detected)
 
@@ -100,7 +107,7 @@ Claude: Done — here's the final commit (for you to sign off)
 
 - **Across sessions**: executor subagents die with the session; **durable state lives in the spec artifacts** (tick tasks.md as you go, `spectra park`/`in-progress` markers). A new session continuing a change spawns a fresh executor grounded on the artifacts.
 - **One change, one executor**: all follow-up instructions for the same change go to the same executor via SendMessage; don't spawn another.
-- **Hard condition for archive**: green tests / a finished TDD run **doesn't count as verification** — before archiving, Claude reruns the key scenarios for real evidence (CLI actually executed, API endpoints actually hit, UI e2e). Changes that can't be run for real get an explicit statement of how they were verified instead.
+- **Apply runtime-completion contract (hard condition)**: if the project can run locally it **must actually be started and driven through the key path** before apply counts as done (CLI executed, API endpoints hit, UI e2e) — green tests / TDD / lint / build are only supporting evidence, and **runnable-but-not-run does not count as done and cannot be archived**. When it genuinely can't be run (missing credential/hardware/service), Claude states the reason, the closest substitute, and what stays unverified. Runtime issues go back to the same executor to fix and re-verify.
 - **The spectra CLI resolves the cwd**: `spectra` has no flag to point at a directory, so every `spectra` command must run at the spec project root (Claude's file-editing tools use absolute paths and aren't affected).
 
 ## This plugin's components

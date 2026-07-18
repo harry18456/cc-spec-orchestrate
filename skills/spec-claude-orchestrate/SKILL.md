@@ -1,15 +1,16 @@
 ---
 name: spec-claude-orchestrate
 description: >-
-  Run spec-driven development entirely inside Claude Code — Claude is both the global commander
-  (propose, every review gate, archive, commit) and the executor (small changes on the main
-  thread; big multi-phase changes via ONE executor subagent per change, continued with
-  SendMessage). Use this WHENEVER taking a feature through the spec pipeline or continuing one
-  mid-flight in a repo with spectra or openspec, and the user wants Claude to handle it all.
-  Typical asks: 走 spec 流程做某個功能、你全權處理這個 change、用 spectra/openspec 開一個 change
-  先 propose 我確認後你自己實作、一個階段一個階段做完你自己驗、繼續上一個 change、archive 並
-  commit。Do NOT use for one-off questions, plain edits, CLI/config troubleshooting, 一般 code
-  review、潤飾文字、跑測試, or anything that doesn't touch a spec.
+  Run spec-driven development entirely inside Claude Code, autonomously from propose to commit —
+  Claude is both the global commander (propose, every review gate, runtime verification, archive,
+  selective commit; no approval waits, stops only on real blockers) and the executor (small
+  changes on the main thread; big multi-phase changes via ONE executor subagent per change,
+  continued with SendMessage). Use this WHENEVER taking a feature through the spec pipeline or
+  continuing one mid-flight in a repo with spectra or openspec, and the user wants Claude to
+  handle it all. Typical asks: 走 spec 流程做某個功能、你全權處理這個 change 一路做到 commit、用
+  spectra/openspec 開一個 change 自己實作自己驗、繼續上一個 change、archive 並 commit。Do NOT
+  use for one-off questions, plain edits, CLI/config troubleshooting, 一般 code review、潤飾文字、
+  跑測試, or anything that doesn't touch a spec.
 compatibility: Requires a spec tool (spectra CLI or openspec) initialized in the repo.
 ---
 
@@ -24,13 +25,21 @@ compatibility: Requires a spec tool (spectra CLI or openspec) initialized in the
 - **決策／思考／驗收 → 主線親自做**（或另開唯讀 subagent 輔助）：`propose`、`discuss`、`ask`、`explore`、`verify`、`audit`、`analyze`、`drift`、`archive` 把關、`commit`
 - **實作／執行 → 混合制**：小 change 主線直做；大 change 交 executor subagent，主線驗收
 
-**Grounding 準則**：任何判斷盡量依**實際程式碼**判讀、或查**官方文件／教學**求證——不臆測、不亂猜。**驗收同理**：看實際行為的實跑證據，**不把「測試綠燈／TDD 過」當通過**（測試多半是執行者自己寫的，同一個誤解會同時進實作與測試）。唯有真的無法處理，才停下來請使用者確認。
+**Grounding 準則**：任何判斷盡量依**實際程式碼**判讀、或查**官方文件／教學**求證——不臆測、不亂猜。**驗收同理**：看實際行為的實跑證據，**不把「測試綠燈／TDD 過」當通過**（測試多半是執行者自己寫的，同一個誤解會同時進實作與測試）。唯有真的 ground 不了（落入下方**自治停止條件**）才停下來問使用者，其餘一律自主往下。
 
 **角色紀律**：即使執行者也是 Claude，「指揮」與「執行」的判斷不混用——review gate 一律回到主線以實際程式碼下判斷，**不因為是自己（或自家 subagent）寫的就放水**。
 
-## 人類介入點（其餘放手）
+## 自治與停止條件
 
-使用者的**主要關卡在 propose（步驟 3）**——在那裡把需求**討論清楚、使用者確認後才往下**。之後 apply→archive 的內層 review loop 由主線**自主跑**，只在這些點回報使用者：① 卡住、或判斷不了的重大決策 ② 最後 commit。其餘**不必一階一階等使用者拍板**。
+觸發本 skill 即視為對 propose → apply → review → archive → selective commit 的**預先授權**：proposal、apply、archive、commit 一律**不等使用者核准**，預設從 propose 自動執行到 commit。過程持續回報簡短進度，但**進度回報不是核准請求**。
+
+只在下列情況停下來等使用者輸入：
+
+1. 需求歧義重大，從 artifacts、實際程式碼或最小驗證都無法安全定案；
+2. 多個既有 change 同時符合要求，語境不足以安全選擇；
+3. 執行需要新權限、外部 credential、scope 擴張，或會動到 scope 外資料；
+4. blocker 經修正嘗試後仍無法排除；
+5. 使用者明確要求「只做 proposal」「先停在 proposal」或排除 archive／commit。
 
 ## 步驟 1 — 偵測 spec 工具（spectra 優先、openspec fallback）
 
@@ -51,13 +60,11 @@ compatibility: Requires a spec tool (spectra CLI or openspec) initialized in the
 - **不需動 spec 的小事** → 直接做（研究 → 實作 → commit），**不進 pipeline**。
 - **需要動 spec** → 進入下面的 change 編排（步驟 3 起）。
 
-## 步驟 3 — propose（主線親自，且**與使用者討論清楚**）
+## 步驟 3 — propose（主線親自；定案後不等核准直接往下）
 
-這是整個 change 的**關鍵人類關卡**——後面 apply/archive 會放手自主，所以「要做什麼」一定要在這裡跟使用者談清楚再定案。
-
-1. **先討論清楚**：需求不夠明確就先釐清——提 2-3 個方向／取捨、確認範圍與邊界，**一次問一個**，談到雙方都清楚為止（spectra 模式可用 `spectra-discuss`）。
-2. **產出 artifacts**：討論定案後才產 proposal／specs／design／tasks（spectra 模式 `spectra-propose`，產完會 `spectra park`）。
-3. **確認 gate**：把 proposal／tasks 給使用者過目，**明確得到「可以」才進入 apply**——不要自己往下衝。
+1. **只在必要時釐清**：需求有影響方向的重大歧義（自治停止條件 1）才向使用者提問（spectra 模式可用 `spectra-discuss`）；否則以最合理解讀**自行定案**，把採用的假設與 out-of-scope 寫進 proposal。
+2. **產出 artifacts**：產 proposal／specs／design／tasks（spectra 模式 `spectra-propose`，產完會 `spectra park`），並跑該模式的 validate／analyze 收斂到無 Critical／Warning。
+3. **回報即前進**：顯示 change 名稱、proposal 摘要與 tasks——這是**進度回報，不是核准請求**，回報後**立即進入 apply**，不等使用者回覆。spectra 模式由主線立刻 unpark 接續；只有使用者明確要求 proposal-only 才停在 parked。
 
 propose 是全局決策，**不外包給 executor**。
 
@@ -70,7 +77,7 @@ propose 是全局決策，**不外包給 executor**。
 
 **executor 模式的操作**：
 
-- **change 第一次派工**：用 Agent tool 開一隻 **general-purpose** executor。指示帶上：change 名稱、本輪 tasks 範圍、spec artifacts 路徑、輸出契約（做了什麼／改了哪些檔／自測結果／遇到的問題；自測結果要附實際執行的命令與輸出，不只測試綠燈）。
+- **change 第一次派工**：用 Agent tool 開一隻 **general-purpose** executor。指示帶上：change 名稱、本輪 tasks 範圍、spec artifacts 路徑、輸出契約（做了什麼／改了哪些檔／自測結果／遇到的問題；自測結果要附實際執行的命令與輸出，不只測試綠燈）。**專案可在本機運行時，executor 要實際啟動專案走過本輪關鍵路徑再回報完成，unit test 綠燈不足以宣告完成；客觀無法運行則回報具體阻礙＋最接近的替代驗證＋尚未驗證的行為**（詳見步驟 5 的實跑完成契約）。
 - **同一 change 後續階段／要求修改**：用 **SendMessage 續同一隻** executor，context 完整保留。
 - **一個 change = 一隻 executor**。executor 的回報只是輸入，驗收永遠在主線（步驟 5）。
 - executor 在背景跑時主線**別動同一批檔案**（避免互相踩）；不同 change 可各自一隻 executor 並行，SendMessage 指名續不會混。
@@ -90,6 +97,16 @@ executor（或主線自己）完成一輪後，由**主線**驗收：
 
 > 乾淨視角一律用**全新 context** 的 subagent，勿用 fork 型 subagent——fork 會繼承主線 context，失去獨立審查的意義。
 
+### Apply 實跑完成契約（硬條件）
+
+驗收不只看 review 報告，還要看**實跑證據**——這是「apply 是否完成」的硬門檻，不是延到 archive 才做：
+
+- 專案**具備可用的本機啟動／執行方式、且不需新權限或破壞性外部操作**時，**必須實際啟動專案並走過本輪 change 的關鍵使用路徑**：CLI 就實跑命令看輸入／輸出／失敗路徑、API 就起服務打關鍵 endpoint、UI 就跑 e2e 或實走主要流程看可見狀態。
+- **只有實際啟動服務／CLI／UI 觀察到的行為才算 runtime evidence**；unit test、mock test、typecheck、lint、build 成功、reviewer 報告都**只能當輔助證據**。
+- **能運行卻沒運行 → 不得宣告本輪 apply 完成、不得進 archive**。
+- 因缺 external service／credential／硬體／平台能力／安全環境而**客觀無法運行**時，記錄**具體原因＋最接近的替代驗證＋尚未驗證的行為**，不得謊稱已完整驗證。純重構／文件類同理：用最接近真實行為的整合測試／build／drift 檢查，並明講沒覆蓋到什麼。
+- runtime 驗證**發現問題** → 把證據與重現步驟送回**同一隻 executor**修正，修好後重跑本 review gate。
+
 判斷後：
 - **通過** → 進下一階段（SendMessage 續 executor，或主線繼續）
 - **要改** → 給修改指示（SendMessage 同一隻 executor 修；主線模式就自己修）→ 再 review
@@ -98,16 +115,24 @@ executor（或主線自己）完成一輪後，由**主線**驗收：
 
 executor 自覺處理有問題上報時 → 主線做判斷 → 給新指示 SendMessage 續跑。
 
-## 步驟 6 — archive（主線執行、自我把關）
+## 步驟 6 — archive（主線執行、自我把關、不等核准）
 
-歸檔是機械操作（spectra／openspec 的 archive 指令），主線直接跑；但跑之前先確認**能不能歸檔**：
+歸檔是機械操作（spectra／openspec 的 archive 指令），主線**自主直接跑**、不等使用者核准；但跑之前先確認同時滿足**能不能歸檔**的硬條件：
 
 1. **tasks 全部完成、spec delta 齊全**——spectra 模式可用 `spectra status --change <名稱> --json`／`spectra validate` 機械檢查。
-2. **verify／audit 通過**（步驟 5 的 review gate 已收斂）。
-3. **實際行為驗證（硬條件）**：測試綠燈／TDD 跑完**不算驗證**——測試多半是執行者自己寫的，同一個誤解會同時出現在實作與測試裡。主線要看到**實跑證據**（跑了什麼命令、觀察到什麼輸出），必要時親自重跑關鍵情境：CLI 就實際執行命令、API 就起服務打 endpoint、UI 就跑 e2e 或實走關鍵流程。真的無法實跑的 change（純重構、文件類）→ 用最接近真實的方式驗（例如 drift 檢查＋既有整合測試），並明講「用什麼驗的、沒驗到什麼」。
+2. **verify／audit／drift 通過**（步驟 5 的 review gate 已收斂，無未處理的 correctness／security finding）。
+3. **實跑證據已在 apply 取得**（步驟 5 的實跑完成契約）：專案可運行時已實際啟動並走過關鍵 scenarios；客觀不可運行時已記錄原因、替代驗證與 residual gap。**測試綠燈／TDD 跑完不等於驗證**——不得用它取代實跑。
+4. **scope 外的 dirty 變更已明確排除**（保留使用者既有、與本 change 無關的改動）。
 
-不符就回步驟 5 補完。
+不符就回步驟 5 補完。spectra 模式直接 `spectra archive "<名稱>"`，**不得**用 `--mark-tasks-complete`／`--no-validate` 或以警告繞過硬條件。
 
-## 步驟 7 — commit（主線親自）
+## 步驟 7 — commit（主線親自、selective staging、不等核准）
 
-由主線做最後的 change commit（全局收尾，commit message 用 en-us、conventional commits）。
+觸發本 skill 已授權 selective commit，主線做最後的 change commit：
+
+1. 重跑 `git status --short`／`git diff`，對照 spectra touched tracking 與開工基線，列出**本 change 實際動到的檔案**。
+2. **逐檔 `git add <path>`**，排除所有 scope 外 dirty files；**禁止 `git add .`／`git add -A`**。
+3. commit message 用 **en-us、conventional commits**，如實描述變更。
+4. 顯示檔案清單與 message 後**直接提交，不等核准**；只有使用者明確排除 commit 時才保留未提交。跑 `git log --oneline -1` 回報 hash 與驗證證據。
+
+commit 是全局收尾，**不外包給 executor**。
